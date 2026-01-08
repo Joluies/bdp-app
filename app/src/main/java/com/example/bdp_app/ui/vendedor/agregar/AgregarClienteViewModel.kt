@@ -1,7 +1,6 @@
 package com.example.bdp_app.ui.vendedor.agregar
 
 import android.app.Application
-import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -18,6 +17,13 @@ import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileOutputStream
 
 class AgregarClienteViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -42,6 +48,10 @@ class AgregarClienteViewModel(application: Application) : AndroidViewModel(appli
     var fotoPerfilUri by mutableStateOf<Uri?>(null)
     val fotosFachada = mutableStateListOf<Uri?>()
 
+    // En AgregarClienteViewModel.kt, agrega estas propiedades:
+    var esMayorista by mutableStateOf(false)
+    var esMinorista by mutableStateOf(false)
+
     // Estado de la UI (Carga, Éxito, Error)
     private val _uiState = MutableStateFlow<UiState>(UiState.Idle)
     val uiState = _uiState.asStateFlow()
@@ -49,6 +59,40 @@ class AgregarClienteViewModel(application: Application) : AndroidViewModel(appli
     // Función para resetear estado después de éxito
     fun resetState() {
         _uiState.value = UiState.Idle
+    }
+
+    fun comprimirImagen(context: Context, uri: Uri, maxSizeKB: Int = 1024): File? {
+        try {
+            val inputStream = context.contentResolver.openInputStream(uri) ?: return null
+            val bitmap = BitmapFactory.decodeStream(inputStream)
+            inputStream.close()
+
+            var quality = 85
+            var compressedFile: File?
+
+            do {
+                val outputStream = ByteArrayOutputStream()
+                bitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
+                val byteArray = outputStream.toByteArray()
+                val sizeInKB = byteArray.size / 1024
+
+                if (sizeInKB <= maxSizeKB || quality <= 10) {
+                    // Guardar en archivo temporal
+                    compressedFile = File(context.cacheDir, "compressed_${System.currentTimeMillis()}.jpg")
+                    FileOutputStream(compressedFile).use { it.write(byteArray) }
+                    break
+                }
+
+                quality -= 10
+            } while (true)
+
+            bitmap.recycle()
+            return compressedFile
+
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return null
+        }
     }
 
     // Función principal de guardado
@@ -72,6 +116,18 @@ class AgregarClienteViewModel(application: Application) : AndroidViewModel(appli
                 val razonSocialRB = if (tieneRuc && razonSocial.isNotEmpty()) razonSocial.toRequestBody(textType) else null
                 val latRB = latitud?.toString()?.toRequestBody(textType)
                 val lonRB = longitud?.toString()?.toRequestBody(textType)
+
+                // Comprimir foto de perfil si existe
+                val fotoPerfilComprimida = fotoPerfilUri?.let {
+                    comprimirImagen(context, it, maxSizeKB = 1500) // 1.5 MB máximo
+                }
+
+                // Comprimir fotos de fachada
+                val fotosComprimidas = fotosFachada.mapNotNull { uri ->
+                    if (uri != null) {
+                        comprimirImagen(context, uri, maxSizeKB = 800)
+                    } // 800 KB cada una
+                }
 
                 // 2. TELÉFONOS (MAPA DE PARTES)
                 val telefonosMap = mutableMapOf<String, RequestBody>()

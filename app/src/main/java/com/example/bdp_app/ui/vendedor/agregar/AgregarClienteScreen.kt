@@ -225,7 +225,35 @@ fun AgregarClienteScreen(
                 label = { Text("Dirección") }, modifier = Modifier.fillMaxWidth()
             )
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(16.dp))
+
+// SECCIÓN TIPO DE CLIENTE
+            Text("Tipo de Cliente", fontWeight = FontWeight.Bold, color = Color(0xFF1B5E20), modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(8.dp))
+
+            Row (Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(
+                    checked = viewModel.esMayorista,
+                    onCheckedChange = { viewModel.esMayorista = it },
+                    colors = CheckboxDefaults.colors(checkedColor = Color(0xFF1B5E20))
+                )
+                Text("Mayorista")
+
+                Spacer(Modifier.width(24.dp))
+
+                Checkbox(
+                    checked = viewModel.esMinorista,
+                    onCheckedChange = { viewModel.esMinorista = it },
+                    colors = CheckboxDefaults.colors(checkedColor = Color(0xFF1B5E20))
+                )
+                Text("Minorista")
+
+                Spacer(Modifier.width(24.dp))
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+
 
             // SECCIÓN TELÉFONOS (Vinculada al ViewModel)
             Text("Teléfonos de Contacto", fontWeight = FontWeight.Bold, color = Color(0xFF1B5E20), modifier = Modifier.fillMaxWidth())

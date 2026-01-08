@@ -8,6 +8,7 @@ sealed class Screen(val route: String) {
     object VendedorMenu : Screen("vendedor_menu")
     object AgregarCliente : Screen("agregar_cliente")
     object RegistrarPedido : Screen("registrar_pedido")
+    object Rutas : Screen( route = "rutas")
 
 
     // Flujo Repartidor

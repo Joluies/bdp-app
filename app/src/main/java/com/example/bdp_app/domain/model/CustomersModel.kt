@@ -1,5 +1,8 @@
 package com.example.bdp_app.domain.model
 
+
+import com.google.gson.annotations.SerializedName
+
 // Respuesta completa de la API
 data class CustomerResponse(
     val success: Boolean,
@@ -17,16 +20,16 @@ data class CustomerData(
 )
 
 data class Cliente(
-    val idCliente: Int? = null,
+    val idCliente: Int,
+    val codigoCliente: String,
     val nombre: String,
     val apellidos: String,
-    val tipoCliente: String, // minorista o mayorista
-    val dni: String,
-    val ruc: String?,  //opcional
-    val razon_social: String?,  //opcional
     val direccion: String,
-    val coordenadas: Coordenadas?,
-    val fotoCliente: String? = null
+    val tipoCliente: String,
+    val dni: String,
+    val fotoCliente: String?, // Viene como "/img/fotosCliente/..."
+    val telefonos: List<Telefono>? = emptyList(),
+    val fotosFachada: List<FotoFachada>? = emptyList()
 )
 
 data class Coordenadas(
@@ -35,12 +38,12 @@ data class Coordenadas(
 )
 
 data class Telefono(
-    val idTelefono: Int? = null,
-    val description: String,
-    val number: String
+    val idTelefono: Int,
+    val numero: String,
+    val description: String
 )
 
 data class FotoFachada(
-    val idFotoFachada: Int? = null,
+    val idFotoFachada: Int,
     val foto: String
 )
