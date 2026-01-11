@@ -20,6 +20,8 @@ import com.example.bdp_app.ui.home.HomeScreen
 import com.example.bdp_app.ui.rutas.RealizarRutasViewModel
 import com.example.bdp_app.ui.rutas.RutaDetalleScreen
 import com.example.bdp_app.ui.rutas.RutasScreen
+import com.example.bdp_app.ui.vendedor.actualizar.ActualizarClienteScreen
+import com.example.bdp_app.ui.vendedor.actualizar.ActualizarClienteViewModel
 import com.example.bdp_app.ui.vendedor.agregar.AgregarClienteScreen
 import com.example.bdp_app.ui.vendedor.pedido.RealizarPedidoScreen
 import com.example.bdp_app.ui.vendedor.pedido.RealizarPedidoViewModel
@@ -41,32 +43,42 @@ fun SetupNavGraph(navController: NavHostController) {
         }
 
         // Pantalla Home
-        composable(route = "home/{role}") { backStrackEntry ->
-            val role = backStrackEntry.arguments?.getString("role") ?: "vendedor"
+        composable(route = "home/{role}") { backStackEntry ->
+            val role = backStackEntry.arguments?.getString("role") ?: "vendedor"
             HomeScreen(navController = navController, role = role)
         }
 
         // --- PANTALLAS DE VENDEDOR ---
 
-        // 1. Agregar Cliente (Aquí estaba el error, ahora llamamos a la función)
+        // 1. Agregar Cliente
         composable(route = Screen.AgregarCliente.route) {
             AgregarClienteScreen(navController = navController)
         }
 
-        // 2. Mapa (Asegúrate de que el nombre coincida con el que usas en el botón "Mapa")
+        // 2. Actualizar Cliente
+        composable(route = Screen.Actualizar.route) {
+            val actualizarViewModel: ActualizarClienteViewModel = viewModel()
+
+            ActualizarClienteScreen(
+                navController = navController,
+                viewModel = actualizarViewModel
+            )
+        }
+
+        // 3. Mapa (Compartido entre agregar y actualizar)
         composable(route = "map_location_screen") {
             MapLocationScreen(navController = navController)
         }
 
-        // 3. Menu Vendedor (Opcional si usas el Home general)
+        // 4. Menu Vendedor (Opcional si usas el Home general)
         composable(route = Screen.VendedorMenu.route) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("Bienvenido Vendedor - Bebidas del Perú", color = Color(0xFF1B5E20))
             }
         }
 
+        // 5. Registrar Pedido
         composable(route = Screen.RegistrarPedido.route) {
-            // Aquí se instancia el ViewModel automáticamente para esta pantalla
             val pedidoViewModel: RealizarPedidoViewModel = viewModel()
 
             RealizarPedidoScreen(
@@ -75,26 +87,22 @@ fun SetupNavGraph(navController: NavHostController) {
             )
         }
 
+        // 6. Rutas
         composable(route = Screen.Rutas.route) {
-            val RutasViewModel: RealizarRutasViewModel = viewModel()
+            val rutasViewModel: RealizarRutasViewModel = viewModel()
 
             RutasScreen(
                 navController = navController,
-                viewModel = RutasViewModel
+                viewModel = rutasViewModel
             )
         }
 
-// ... dentro del NavHost
-
+        // 7. Detalle de Ruta
         composable(
             route = "ruta_detalle/{clienteId}",
             arguments = listOf(navArgument("clienteId") { type = NavType.IntType })
         ) { backStackEntry ->
             val clienteId = backStackEntry.arguments?.getInt("clienteId") ?: 0
-
-            // Necesitamos pasar la MISMA instancia del ViewModel.
-            // Si usas Hilt es automático, si no, pásalo desde el grafo padre o crea uno nuevo si la data persiste.
-            // Para simplificar, aquí instanciamos uno nuevo, pero idealmente se comparte.
             val viewModel: RealizarRutasViewModel = viewModel()
 
             RutaDetalleScreen(navController, clienteId, viewModel)

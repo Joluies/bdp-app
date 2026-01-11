@@ -4,131 +4,96 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+// IMPORTANTE: Esta importación es la que soluciona el error de "Type mismatch"
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.example.bdp_app.R
+import com.example.bdp_app.domain.model.Cliente
 
-// Definimos los colores (si ya los tienes en Theme, úsalos desde ahí)
-val DarkGreenBDP = Color(0xFF1B5E20)
-val LightGreenCard = Color(0xFFC8E6C9)
+const val BASE_URL_STORAGE = "https://api.bebidasdelperuapp.com/storage"
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RutasScreen(
     navController: NavHostController,
-    // Asegúrate de que el nombre del ViewModel coincida con tu clase (RutasViewModel o RealizarRutasViewModel)
-    viewModel: RealizarRutasViewModel = viewModel()
+    viewModel: RealizarRutasViewModel
 ) {
-    val clientes = viewModel.listaClientesRuta
+    // Ahora 'clientes' sí existe porque actualizamos el ViewModel
+    val clientes by viewModel.clientes.observeAsState(emptyList())
+    var searchText by remember { mutableStateOf("") }
+
+    val clientesFiltrados = remember(clientes, searchText) {
+        if (searchText.isBlank()) {
+            clientes
+        } else {
+            clientes.filter { cliente -> // Usamos nombre explícito 'cliente' en lugar de 'it'
+                cliente.nombre.contains(searchText, ignoreCase = true) ||
+                        cliente.dni.contains(searchText) ||
+                        (cliente.codigoCliente?.contains(searchText, ignoreCase = true) == true)
+            }
+        }
+    }
 
     Scaffold(
-        bottomBar = {
-            Button(
-                onClick = { /* Lógica para iniciar recorrido */ },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-                    .height(55.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = DarkGreenBDP)
-            ) {
-                Text("Iniciar Recorrido", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            }
+        topBar = {
+            TopAppBar(
+                title = { Text("Rutas del Día", color = Color.White, fontWeight = FontWeight.Bold) },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF1B5E20))
+            )
         }
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .background(Color.White)
+                .background(Color(0xFFF5F5F5))
         ) {
-            // --- ENCABEZADO ---
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(DarkGreenBDP)
-                    .padding(16.dp)
+            // BUSCADOR
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                elevation = CardDefaults.cardElevation(4.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White)
             ) {
-                Column {
-                    Text(
-                        text = "Ruta San Juan 2:",
-                        color = Color.White,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold
+                OutlinedTextField(
+                    value = searchText,
+                    onValueChange = { searchText = it },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
+                    placeholder = { Text("Buscar por nombre, DNI o código") },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent
                     )
-                    Text(
-                        text = "Prolongacion Navarro Cauper/\nQuiñones",
-                        color = Color.White,
-                        fontSize = 18.sp
-                    )
-                }
+                )
             }
 
-            // --- MAPA (Placeholder) ---
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(200.dp)
-                    .background(Color.LightGray)
-            ) {
-                Text("Mapa de la Zona", modifier = Modifier.align(Alignment.Center))
-            }
-
-            // --- TÍTULO DE LISTA ---
-            Row(
-                modifier = Modifier.padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Default.LocationOn, contentDescription = null, tint = DarkGreenBDP)
-                Spacer(modifier = Modifier.width(8.dp))
-                Column {
-                    Text(
-                        text = "Clientes en la ruta San Juan 2:",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = DarkGreenBDP
-                    )
-                    Text(
-                        text = "${clientes.size} clientes",
-                        fontSize = 14.sp,
-                        color = Color.Gray
-                    )
-                }
-            }
-
-            // --- LISTA DE CLIENTES ---
+            // LISTA DE CLIENTES
             LazyColumn(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.weight(1f)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                if (viewModel.isLoading.value) {
-                    item {
-                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(color = DarkGreenBDP)
-                        }
-                    }
-                } else {
-                    items(clientes) { cliente ->
-                        ClienteRutaCard(
-                            nombre = "${cliente.nombre} ${cliente.apellidos}",
-                            codigo = cliente.codigoCliente,
-                            direccion = cliente.direccion,
-                            onClick = {
-                                // Navegamos usando el ID del cliente
-                                navController.navigate("ruta_detalle/${cliente.idCliente}")
-                            }
-                        )
+                // CORRECCIÓN: Usamos 'items(items = ...)' explícitamente
+                items(items = clientesFiltrados, key = { it.idCliente }) { clienteObj ->
+                    ClienteItem(cliente = clienteObj) {
+                        navController.navigate("ruta_detalle_screen/${clienteObj.idCliente}")
                     }
                 }
             }
@@ -137,41 +102,70 @@ fun RutasScreen(
 }
 
 @Composable
-fun ClienteRutaCard(
-    nombre: String,
-    codigo: String,
-    direccion: String,
+fun ClienteItem(
+    cliente: Cliente,
     onClick: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+
     Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = LightGreenCard),
-        modifier = Modifier.fillMaxWidth().clickable { onClick() }
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(2.dp)
     ) {
         Row(
-            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+            modifier = Modifier.padding(12.dp).fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = Icons.Default.Person,
+            // FOTO
+            val fotoUrl = if (!cliente.fotoCliente.isNullOrBlank()) {
+                if (cliente.fotoCliente.startsWith("http")) cliente.fotoCliente
+                else "$BASE_URL_STORAGE/img/fotosCliente/${cliente.fotoCliente}"
+            } else null
+
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(fotoUrl)
+                    .crossfade(true)
+                    .build(),
                 contentDescription = null,
-                tint = DarkGreenBDP,
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier
+                    .size(60.dp)
+                    .clip(CircleShape)
+                    .background(Color.LightGray),
+                contentScale = ContentScale.Crop,
+                error = painterResource(R.drawable.logo_bdp),
+                placeholder = painterResource(R.drawable.logo_bdp)
             )
 
             Spacer(modifier = Modifier.width(16.dp))
 
+            // DATOS
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = nombre, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = DarkGreenBDP)
-                Text(text = codigo, fontSize = 14.sp, color = DarkGreenBDP)
-                Text(text = direccion, fontSize = 14.sp, color = DarkGreenBDP, fontWeight = FontWeight.Medium)
-            }
+                Text(
+                    text = "${cliente.nombre} ${cliente.apellidos}",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = Color(0xFF1B5E20)
+                )
+                Spacer(modifier = Modifier.height(4.dp))
 
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Default.Edit, contentDescription = "Ver Detalle", tint = DarkGreenBDP)
-                Text(text = "Ver Detalle", fontSize = 10.sp, color = DarkGreenBDP)
+                // Aquí usábamos 'it', pero ahora está dentro de 'cliente'
+                Text(
+                    text = "Cód: ${cliente.codigoCliente ?: "Pendiente"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+                Text(
+                    text = cliente.direccion,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    color = Color.DarkGray
+                )
             }
         }
     }
 }
-

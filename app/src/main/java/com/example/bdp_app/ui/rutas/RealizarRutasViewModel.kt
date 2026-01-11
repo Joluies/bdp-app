@@ -1,47 +1,53 @@
 package com.example.bdp_app.ui.rutas
 
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
-import com.example.bdp_app.domain.model.Cliente
 import com.example.bdp_app.core.network.RetrofitClient
+import com.example.bdp_app.domain.model.Cliente
 import kotlinx.coroutines.launch
 
-class RealizarRutasViewModel : ViewModel() {
+class RealizarRutasViewModel(application: Application) : AndroidViewModel(application) {
 
-    // Lista observable de clientes para la ruta
-    var listaClientesRuta = mutableStateListOf<Cliente>()
-        private set
+    // --- ESTADO DE CLIENTES ---
+    private val _clientes = MutableLiveData<List<Cliente>>(emptyList())
+    val clientes: LiveData<List<Cliente>> = _clientes // Esta es la variable que faltaba
 
-    var isLoading = mutableStateOf(false)
+    private val _isLoading = MutableLiveData(false)
+    val isLoading: LiveData<Boolean> = _isLoading
+
+    private val _error = MutableLiveData<String?>()
+    val error: LiveData<String?> = _error
 
     init {
-        obtenerClientesRuta()
+        cargarClientes()
     }
 
-    fun obtenerClientesRuta() {
+    fun cargarClientes() {
         viewModelScope.launch {
-            isLoading.value = true
+            _isLoading.value = true
             try {
                 val response = RetrofitClient.apiService.getCustomers()
                 if (response.isSuccessful) {
-                    // Accedemos a response -> body -> data -> data (por el wrapper)
-                    response.body()?.data?.data?.let { clientes ->
-                        listaClientesRuta.clear()
-                        listaClientesRuta.addAll(clientes)
-                    }
+                    // Mapeo seguro de la respuesta
+                    val lista = response.body()?.data?.data ?: emptyList()
+                    _clientes.value = lista
+                } else {
+                    _error.value = "Error al cargar: ${response.code()}"
                 }
             } catch (e: Exception) {
-                // Manejar error
+                _error.value = "Fallo de conexión: ${e.message}"
             } finally {
-                isLoading.value = false
+                _isLoading.value = false
             }
         }
     }
 
+    // Helper para la pantalla de detalle
     fun obtenerClientePorId(id: Int): Cliente? {
-        return listaClientesRuta.find { it.idCliente == id }
+        return _clientes.value?.find { it.idCliente == id }
     }
 }
 

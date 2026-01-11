@@ -1,49 +1,58 @@
 package com.example.bdp_app.domain.model
 
-
 import com.google.gson.annotations.SerializedName
 
-// Respuesta completa de la API
+// Respuesta para LISTAS
 data class CustomerResponse(
     val success: Boolean,
     val data: CustomerPaginationData
 )
 
 data class CustomerPaginationData(
-    val data: List<Cliente> // Aquí es donde están los clientes reales
+    val data: List<Cliente>
 )
 
-data class CustomerData(
-    val cliente: Cliente,
-    val telefonos: List<Telefono>,
-    val fotosFachada: List<FotoFachada>
+// Respuesta para CREAR/ACTUALIZAR
+data class SingleCustomerResponse(
+    val success: Boolean,
+    val message: String?,
+    val data: Cliente?
 )
 
 data class Cliente(
     val idCliente: Int,
-    val codigoCliente: String,
+
+    // AGREGA ESTO: Aunque se genera en DB, la App lo necesita para mostrarlo
+    val codigoCliente: String?,
+
     val nombre: String,
     val apellidos: String,
+    val dni: String,
     val direccion: String,
     val tipoCliente: String,
-    val dni: String,
-    val fotoCliente: String?, // Viene como "/img/fotosCliente/..."
+    val ruc: String?,
+
+    @SerializedName("razon_social") val razonSocial: String?,
+    val fotoCliente: String?,
+
+    val coordenadas: CoordenadasMap?,
+
     val telefonos: List<Telefono>? = emptyList(),
-    val fotosFachada: List<FotoFachada>? = emptyList()
+
 )
 
-data class Coordenadas(
+data class CoordenadasMap(
     val latitud: Double,
     val longitud: Double
 )
 
 data class Telefono(
-    val idTelefono: Int,
-    val numero: String,
+    val idTelefono: Int?,
+
+    // TRUCO: Mapeamos el JSON "number" a la variable "numero" de Kotlin
+    // Así no tienes que cambiar todo tu código de la UI
+    @SerializedName("number") val numero: String,
+
     val description: String
 )
 
-data class FotoFachada(
-    val idFotoFachada: Int,
-    val foto: String
-)

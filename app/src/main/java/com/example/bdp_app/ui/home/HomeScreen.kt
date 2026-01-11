@@ -38,9 +38,13 @@ fun HomeScreen(navController: NavHostController, role: String) {
     val allOptions = listOf(
         MenuOption("Agregar Nuevo Cliente", Icons.Default.PersonAdd, Screen.AgregarCliente.route, listOf("vendedor")),
         MenuOption("Agregar Pedidos", Icons.Default.Assignment, Screen.RegistrarPedido.route, listOf("vendedor")),
-        MenuOption("Ver rutas", Icons.Default.LocationOn, "rutas", listOf("vendedor", "repartidor")),
+        MenuOption("Ver rutas", Icons.Default.LocationOn, Screen.Rutas.route, listOf("vendedor", "repartidor")), // También corregí Rutas por si acaso
         MenuOption("Hacer Despacho", Icons.Default.LocalShipping, "despacho", listOf("repartidor")),
         MenuOption("Lista de Entrega", Icons.Default.ListAlt, "entrega", listOf("repartidor")),
+
+        // CORRECCIÓN AQUÍ: Usar Screen.Actualizar.route
+        MenuOption("Actualizar Clientes", Icons.Default.Update, Screen.Actualizar.route, listOf("vendedor")),
+
         MenuOption("Cerrar Sesion", Icons.Default.PowerSettingsNew, Screen.Login.route, listOf("vendedor", "repartidor"))
     )
 
