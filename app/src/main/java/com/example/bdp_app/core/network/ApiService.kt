@@ -15,14 +15,13 @@ interface ApiService {
     // --- CLIENTES ---
 
 
-    // POR ESTO:
-    @GET("customers/lite")
+    @GET("customers")
     suspend fun getCustomers(): Response<CustomerResponse>
 
-    // Buscar clientes (si usas un endpoint de búsqueda específico)
-    // POR ESTO:
-    @GET("customers/lite")
-    suspend fun buscarClientes(@Query("nombre") query: String): Response<CustomerResponse>
+    // 2. BUSCAR EN EL SERVIDOR (Usando el nuevo filtro 'search')
+    // Esto llamará a: /api/customers?search=70854216 (por ejemplo)
+    @GET("customers")
+    suspend fun buscarClientes(@Query("search") criterio: String): Response<CustomerResponse>
 
 
 
@@ -41,26 +40,28 @@ interface ApiService {
         @Part fotosFachada: List<MultipartBody.Part>
     ): Response<ResponseBody>
 
-    @GET("customers/{id}/photos")
-    suspend fun getFotosFachada(@Path("id") id: Int): Response<FotosFachadaApiResponse>
-
     @Multipart
+
     @POST("customers/{id}")
+
     suspend fun actualizarCliente(
+
         @Path("id") id: Int,
         @Part("_method") method: RequestBody,
-        @Part("nombre") nombre: RequestBody,
-        @Part("apellidos") apellidos: RequestBody,
-        @Part("dni") dni: RequestBody,
-        @Part("direccion") direccion: RequestBody,
-        @Part("tipoCliente") tipoCliente: RequestBody,
+        @Part("nombre") nombre: RequestBody?,
+        @Part("apellidos") apellidos: RequestBody?,
+        @Part("dni") dni: RequestBody?,
+        @Part("direccion") direccion: RequestBody?,
+        @Part("tipoCliente") tipoCliente: RequestBody?,
         @Part("ruc") ruc: RequestBody?,
         @Part("razonSocial") razonSocial: RequestBody?,
         @Part("coordenadas") coordenadas: RequestBody?, // <--- Faltaba esto
         @PartMap dataMap: Map<String, @JvmSuppressWildcards RequestBody>, // <--- Faltaba esto (reemplaza a telefnos)
         @Part fotoPerfil: MultipartBody.Part?,
-    ): Response<SingleCustomerResponse>
+        ): Response<SingleCustomerResponse>
 
+    @GET("customers/{id}/photos")
+    suspend fun getFotosFachada(@Path("id") id: Int): Response<FotosFachadaApiResponse>
     // 3. SUBIR FOTO FACHADA (Arregla 'Unresolved reference: subirFotoFachada')
     @Multipart
     @POST("customers/{id}/photo")

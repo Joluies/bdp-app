@@ -93,12 +93,17 @@ class RealizarPedidoViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun enviarPedidoFinal(onSuccess: () -> Unit) {
-        if (clienteSeleccionado == null) return
+        // Validación básica
+        val cliente = clienteSeleccionado
+        if (cliente == null) {
+            _uiState.value = UiState.Error("Seleccione un cliente primero")
+            return
+        }
 
         viewModelScope.launch {
             _uiState.value = UiState.Loading
             try {
-                // Filtramos solo los productos que tengan cantidad > 0
+                // 1. Filtrar productos con cantidad > 0
                 val itemsSeleccionados = productos.filter { it.cantidad > 0 }
 
                 if (itemsSeleccionados.isEmpty()) {
@@ -106,25 +111,70 @@ class RealizarPedidoViewModel(application: Application) : AndroidViewModel(appli
                     return@launch
                 }
 
+                // --- GENERACIÓN AUTOMÁTICA DE DATOS FALTANTES ---
+
+                // A. ID Vendedor: Como no tenemos login, ponemos 1 por defecto (o el ID de tu usuario admin)
+                val idVendedorDefault = 1
+
+                // B. Número de Pedido: Generamos uno único usando la hora actual
+                val timeStamp = System.currentTimeMillis()
+                val numeroPedidoAuto = "PED-${timeStamp}"
+
+                // C. Fecha de Entrega: Calculamos "Mañana" automáticamente
+                val calendar = java.util.Calendar.getInstance()
+                calendar.add(java.util.Calendar.DAY_OF_YEAR, 1) // Sumamos 1 día
+                val formatoFecha = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+                val fechaEntregaAuto = formatoFecha.format(calendar.time)
+
+                // ------------------------------------------------
+
+                // 2. Preparar la lista de "detalles" (PHP exige 'precio_unitario')
+                val detallesMapeados = itemsSeleccionados.map { item ->
+                    // Determinamos el precio correcto
+                    val precioFinal = if (cliente.tipoCliente.equals("Mayorista", ignoreCase = true))
+                        item.producto.precioMayorista
+                    else
+                        item.producto.precioUnitario
+
+                    mapOf(
+                        "idProducto" to item.producto.idProducto,
+                        "cantidad" to item.cantidad,
+                        "precio_unitario" to precioFinal // <--- ¡OBLIGATORIO PARA PHP!
+                    )
+                }
+
+                // 3. Armar el JSON Final (Coincidiendo con lo que pide Laravel)
                 val pedidoData = mapOf(
-                    "idCliente" to clienteSeleccionado?.idCliente,
-                    "productos" to itemsSeleccionados.map {
-                        mapOf("idProducto" to it.producto.idProducto, "cantidad" to it.cantidad)
-                    },
-                    "total" to total
+                    "idCliente" to cliente.idCliente,
+                    "idVendedor" to idVendedorDefault,      // Dato automático
+                    "numero_pedido" to numeroPedidoAuto,    // Dato automático
+                    "fecha_entrega" to fechaEntregaAuto,    // Dato automático
+                    "observaciones" to "Pedido generado desde App Android",
+                    "detalles" to detallesMapeados          // <--- Se llama "detalles", no "productos"
                 )
 
-                val body = Gson().toJson(pedidoData).toRequestBody("application/json".toMediaTypeOrNull())
+                // Log para depurar (mira esto en el Logcat si falla)
+                val jsonString = Gson().toJson(pedidoData)
+                android.util.Log.d("PEDIDO_JSON", "Enviando: $jsonString")
+
+                // 4. Enviar
+                val body = jsonString.toRequestBody("application/json".toMediaTypeOrNull())
                 val response = RetrofitClient.apiService.enviarPedido(body)
 
                 if (response.isSuccessful) {
-                    _uiState.value = UiState.Success("Pedido realizado con éxito")
+                    _uiState.value = UiState.Success("¡Pedido $numeroPedidoAuto creado!")
                     onSuccess()
+                    // Opcional: Limpiar carrito
+                    productos.forEach { it.cantidad = 0 }
                 } else {
-                    _uiState.value = UiState.Error("Error al enviar pedido: ${response.code()}")
+                    val errorMsg = response.errorBody()?.string() ?: "Error desconocido"
+                    android.util.Log.e("PEDIDO_ERROR", errorMsg)
+                    _uiState.value = UiState.Error("Error del servidor: $errorMsg")
                 }
+
             } catch (e: Exception) {
-                _uiState.value = UiState.Error(e.message ?: "Error de red")
+                _uiState.value = UiState.Error("Error de conexión: ${e.localizedMessage}")
+                e.printStackTrace()
             }
         }
     }

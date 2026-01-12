@@ -76,28 +76,23 @@ class ActualizarClienteViewModel(application: Application) : AndroidViewModel(ap
         viewModelScope.launch {
             _uiState.value = UiState.Loading
             try {
-                // Nota: Idealmente deberías tener un endpoint de búsqueda en el backend.
-                // Aquí usamos getCustomers() y filtramos localmente como tenías antes.
-                val response = RetrofitClient.apiService.getCustomers()
-                if (response.isSuccessful) {
-                    val lista = response.body()?.data?.data ?: emptyList()
+                // Llamamos al backend enviando el DNI, RUC o Nombre en el campo "search"
+                val response = RetrofitClient.apiService.buscarClientes(criterio)
 
-                    // Lógica de filtrado según tipo
-                    val encontrado = when (tipoBusqueda) {
-                        "DNI" -> lista.find { it.dni == criterio }
-                        "RUC" -> lista.find { it.ruc == criterio }
-                        "Nombre", "Apellidos" -> lista.find { "${it.nombre} ${it.apellidos}".contains(criterio, true) }
-                        "Razón Social" -> lista.find { it.razonSocial?.contains(criterio, true) == true }
-                        else -> null
-                    }
+                if (response.isSuccessful) {
+                    // El backend devuelve una estructura paginada.
+                    // Accedemos a data -> data (la lista real)
+                    val listaResultados = response.body()?.data?.data ?: emptyList()
+
+                    // Tomamos el primero que encuentre (o null si la lista está vacía)
+                    val encontrado = listaResultados.firstOrNull()
 
                     if (encontrado != null) {
                         limpiarFormulario()
-                        // 1. Llenar datos básicos
                         clienteId = encontrado.idCliente.toString()
                         nombre = encontrado.nombre
                         apellidos = encontrado.apellidos
-                        dni = encontrado.dni
+                        dni = encontrado.dni ?: ""
                         direccion = encontrado.direccion
                         tieneRuc = !encontrado.ruc.isNullOrBlank()
                         ruc = encontrado.ruc ?: ""
@@ -118,21 +113,19 @@ class ActualizarClienteViewModel(application: Application) : AndroidViewModel(ap
                         }
                         if (listaTelefonos.isEmpty()) listaTelefonos.add(TelefonoData("", "Personal"))
 
-                        // Foto Perfil
-                        fotoPerfilUrl = encontrado.fotoCliente
-
-                        // 2. LLAMADA IMPORTANTE: Cargar fotos fachada desde su ruta específica
+                        // Fotos
                         cargarFotosFachada(encontrado.idCliente)
+                        fotoPerfilUrl = encontrado.fotoCliente
 
                         _uiState.value = UiState.Idle
                     } else {
-                        _uiState.value = UiState.Error("Cliente no encontrado con $tipoBusqueda: $criterio")
+                        _uiState.value = UiState.Error("No se encontró el cliente en la base de datos.")
                     }
                 } else {
                     _uiState.value = UiState.Error("Error del servidor: ${response.code()}")
                 }
             } catch (e: Exception) {
-                _uiState.value = UiState.Error("Error de conexión: ${e.message}")
+                _uiState.value = UiState.Error("Conexión: ${e.message}")
             }
         }
     }
@@ -170,30 +163,36 @@ class ActualizarClienteViewModel(application: Application) : AndroidViewModel(ap
         _uiState.value = UiState.Loading
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // --- PREPARAR DATOS DE TEXTO ---
+                // --- PREPARAR DATOS (Lógica de Nulos) ---
+                // CORRECCIÓN: Si el texto está vacío, enviamos NULL para que Laravel ignore la validación
                 val methodPart = createPartFromString("PUT")
-                val nombrePart = createPartFromString(nombre)
-                val apellidosPart = createPartFromString(apellidos)
-                val dniPart = createPartFromString(dni)
-                val direccionPart = createPartFromString(direccion)
-                val tipoPart = createPartFromString(if (esMayorista) "Mayorista" else "Minorista")
-                val rucPart = if (tieneRuc) createPartFromString(ruc) else null
-                val razonSocialPart = if (tieneRuc) createPartFromString(razonSocial) else null
+
+                val nombrePart = if (nombre.isNotBlank()) createPartFromString(nombre) else null
+                val apellidosPart = if (apellidos.isNotBlank()) createPartFromString(apellidos) else null
+                val dniPart = if (dni.isNotBlank()) createPartFromString(dni) else null
+                val direccionPart = if (direccion.isNotBlank()) createPartFromString(direccion) else null
+
+                val tipoStr = if (esMayorista) "Mayorista" else "Minorista"
+                val tipoPart = createPartFromString(tipoStr)
+
+                // RUC y Razón Social (Validamos que tenga check Y texto)
+                val rucPart = if (tieneRuc && ruc.isNotBlank()) createPartFromString(ruc) else null
+                val razonSocialPart = if (tieneRuc && razonSocial.isNotBlank()) createPartFromString(razonSocial) else null
 
                 // --- 1. MAPA DE DATOS (Coordenadas + Teléfonos) ---
                 val dataMap = mutableMapOf<String, RequestBody>()
 
-                // A. COORDENADAS: Enviarlas por separado para que PHP las vea como Array [lat, long]
+                // A. COORDENADAS
                 if (latitud != null && longitud != null) {
                     dataMap["coordenadas[latitud]"] = createPartFromString(latitud.toString())
                     dataMap["coordenadas[longitud]"] = createPartFromString(longitud.toString())
                 }
 
-                // B. TELÉFONOS: Agregar descripción y número al mapa
+                // B. TELÉFONOS
                 listaTelefonos.forEachIndexed { index, tel ->
                     if (tel.numero.isNotEmpty()) {
                         dataMap["telefonos[$index][number]"] = createPartFromString(tel.numero)
-                        // Aseguramos que si el tipo está vacío, enviamos "Personal" por defecto
+                        // Si no eligió tipo, ponemos "Personal" por defecto
                         val tipoFinal = if (tel.tipo.isBlank()) "Personal" else tel.tipo
                         dataMap["telefonos[$index][description]"] = createPartFromString(tipoFinal)
                     }
@@ -210,19 +209,20 @@ class ActualizarClienteViewModel(application: Application) : AndroidViewModel(ap
                     method = methodPart,
                     nombre = nombrePart,
                     apellidos = apellidosPart,
-                    dni = dniPart,
+                    dni = dniPart,         // <--- Ahora viaja como null si está vacío
                     direccion = direccionPart,
                     tipoCliente = tipoPart,
-                    ruc = rucPart,
+                    ruc = rucPart,         // <--- Ahora viaja como null si está vacío
                     razonSocial = razonSocialPart,
-                    coordenadas = null, // ¡IMPORTANTE! Null aquí porque ya van en dataMap
-                    dataMap = dataMap,  // Aquí viajan las coordenadas arregladas
+                    coordenadas = null,    // Null aquí porque ya van en dataMap
+                    dataMap = dataMap,
                     fotoPerfil = fotoPerfilPart
                 )
 
                 if (!responseMain.isSuccessful) {
-                    // Leemos el error del servidor para saber qué falló
                     val errorMsg = responseMain.errorBody()?.string() ?: "Error desconocido"
+                    // Log para ver el error real en la consola
+                    android.util.Log.e("ERROR_API", "El servidor respondió: $errorMsg")
                     _uiState.value = UiState.Error("Error al guardar: $errorMsg")
                     return@launch
                 }
