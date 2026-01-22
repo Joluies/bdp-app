@@ -8,18 +8,19 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.bdp_app.core.network.RetrofitClient
+import com.example.bdp_app.domain.model.Bonificacion
 import com.example.bdp_app.domain.model.CartItem
 import com.example.bdp_app.domain.model.Cliente
-import com.example.bdp_app.ui.vendedor.agregar.UiState
-import com.example.bdp_app.domain.model.ProductResponse
 import com.example.bdp_app.domain.model.ProductModel
-
+import com.example.bdp_app.ui.vendedor.agregar.UiState
 import com.google.gson.Gson
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.util.Calendar
+import java.util.Locale
 
 class RealizarPedidoViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -32,36 +33,61 @@ class RealizarPedidoViewModel(application: Application) : AndroidViewModel(appli
     val listaClientes = mutableStateListOf<Cliente>()
     var clienteSeleccionado by mutableStateOf<Cliente?>(null)
 
+    // Estado para la fecha de entrega
+    var fechaEntregaSeleccionada by mutableStateOf("")
+
+    // Almacenamiento local de las reglas de bonificación
+    private var listaBonificaciones = listOf<Bonificacion>()
+
     // 2. CÁLCULOS DINÁMICOS
+    // 2. CÁLCULOS DINÁMICOS (Corregido)
     val subtotal: Double get() = productos.sumOf { item ->
-        // Comparamos ignorando mayúsculas/minúsculas para evitar errores
-        val precio = if (clienteSeleccionado?.tipoCliente?.equals("Mayorista", ignoreCase = true) == true)
-            item.producto.precioMayorista
-        else item.producto.precioUnitario
-        precio * item.cantidad
+        if (item.esBonificacion) {
+            0.0
+        } else {
+            // LÓGICA DE PRECIO CORREGIDA (REGLA >= 100)
+            val esClienteMayorista = clienteSeleccionado?.tipoCliente?.equals("Mayorista", ignoreCase = true) == true
+            val cumpleCantidadMinima = item.cantidad >= 100 // Ahora es 100
+
+            val precio = if (esClienteMayorista && cumpleCantidadMinima)
+                item.producto.precioMayorista
+            else
+                item.producto.precioUnitario
+
+            precio * item.cantidad
+        }
     }
 
-    val impuestos: Double get() = subtotal * 0.18 // IGV 18%
-    val total: Double get() = subtotal + impuestos
+    // LÓGICA DE IMPUESTOS (Región Selva/Exonerada)
+    val impuestos: Double get() = 0.0 // IGV 0%
+
+    val total: Double get() = subtotal // Total es igual al subtotal
 
     // 3. INICIALIZACIÓN
     init {
         cargarProductos()
         cargarClientes()
+        cargarBonificaciones() // Cargar reglas
+        establecerFechaManana() // Fecha por defecto
     }
 
     // 4. MÉTODOS DE CARGA (API)
-    // DENTRO DE RealizarPedidoViewModel
 
     private fun cargarProductos() {
         viewModelScope.launch {
             try {
                 val response = RetrofitClient.apiService.getProducts()
                 if (response.isSuccessful) {
-                    // response.body() es ProductResponse -> entramos a .products
                     response.body()?.products?.let { list ->
                         productos.clear()
-                        productos.addAll(list.map { CartItem(it) })
+                        // Instanciamos explícitamente para evitar errores de argumentos
+                        productos.addAll(list.map {
+                            CartItem(
+                                producto = it,
+                                cantidad = 0,
+                                esBonificacion = false
+                            )
+                        })
                     }
                 }
             } catch (e: Exception) { e.printStackTrace() }
@@ -73,7 +99,6 @@ class RealizarPedidoViewModel(application: Application) : AndroidViewModel(appli
             try {
                 val response = RetrofitClient.apiService.getCustomers()
                 if (response.isSuccessful) {
-                    // response.body() es CustomerResponse -> entramos a .data.data
                     response.body()?.data?.data?.let { list ->
                         listaClientes.clear()
                         listaClientes.addAll(list)
@@ -83,17 +108,134 @@ class RealizarPedidoViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    // 5. ACCIONES
+    private fun cargarBonificaciones() {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.apiService.getBonificaciones()
+                if (response.isSuccessful) {
+                    // Accedemos a data.data según la estructura JSON que enviaste
+                    listaBonificaciones = response.body()?.data?.data ?: emptyList()
+                }
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+    }
+
+    // 5. GESTIÓN DE FECHAS (DATE PICKER)
+
+    private fun establecerFechaManana() {
+        val calendar = Calendar.getInstance()
+        calendar.add(Calendar.DAY_OF_YEAR, 1) // Mañana
+        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        fechaEntregaSeleccionada = sdf.format(calendar.time)
+    }
+
+    fun actualizarFechaEntrega(anio: Int, mes: Int, dia: Int) {
+        // Ajuste porque mes empieza en 0 en Calendar
+        val mesReal = mes + 1
+        val mesStr = if (mesReal < 10) "0$mesReal" else "$mesReal"
+        val diaStr = if (dia < 10) "0$dia" else "$dia"
+        fechaEntregaSeleccionada = "$anio-$mesStr-$diaStr"
+    }
+
+    // 6. ACCIONES Y LÓGICA DE NEGOCIO
+
     fun actualizarCantidad(productId: Int, nuevaCantidad: Int) {
         val index = productos.indexOfFirst { it.producto.idProducto == productId }
         if (index != -1) {
-            // Reemplazamos el item para que Compose detecte el cambio en la lista
-            productos[index] = productos[index].copy(cantidad = nuevaCantidad)
+            // Solo permitimos editar manualmente productos que NO sean bonificaciones
+            if (!productos[index].esBonificacion) {
+                productos[index] = productos[index].copy(cantidad = nuevaCantidad)
+                aplicarBonificaciones() // Recalcular regalos cada vez que cambia una cantidad
+            }
+        }
+    }
+
+    private fun aplicarBonificaciones() {
+        // 1. Limpiar bonificaciones previas para evitar duplicados
+        productos.removeIf { it.esBonificacion }
+
+        // 2. Recorrer reglas activas
+        listaBonificaciones.forEach { regla ->
+            var aplicaBonificacion = false
+
+            when (regla.tipo_bonificacion) {
+                "producto" -> {
+                    // Regla: Por comprar X cantidad de un producto específico
+                    val prodRequeridoId = regla.idProducto_requerido ?: 0
+                    val itemEnCarrito = productos.find { it.producto.idProducto == prodRequeridoId && !it.esBonificacion }
+
+                    if (itemEnCarrito != null) {
+                        val cantidadMinima = regla.cantidad_minima ?: 0
+                        if (itemEnCarrito.cantidad >= cantidadMinima) {
+                            aplicaBonificacion = true
+                        }
+                    }
+                }
+                "cantidad" -> {
+                    // Regla: Por volumen de compra (mix de productos)
+                    val idsRequeridos = regla.productosRequeridos ?: emptyList()
+                    // Sumamos la cantidad de todos los productos que están en la lista requerida
+                    val cantidadTotalMix = productos
+                        .filter { it.producto.idProducto in idsRequeridos && !it.esBonificacion }
+                        .sumOf { it.cantidad }
+
+                    // Verificamos la primera escala
+                    val escala = regla.escalas_cantidad?.firstOrNull()
+                    if (escala != null && cantidadTotalMix >= escala.cantidad_minima) {
+                        aplicaBonificacion = true
+                    }
+                }
+                "precio" -> {
+                    // Regla: Por monto de compra de un producto específico
+                    val prodId = regla.idProducto_requerido ?: 0
+                    val item = productos.find { it.producto.idProducto == prodId && !it.esBonificacion }
+                    if (item != null) {
+                        val precioItem = if (clienteSeleccionado?.tipoCliente.equals("Mayorista", true))
+                            item.producto.precioMayorista
+                        else item.producto.precioUnitario
+
+                        val subtotalItem = item.cantidad * precioItem
+                        val precioMinimo = regla.precio_minimo?.toDoubleOrNull() ?: 0.0
+
+                        if (subtotalItem >= precioMinimo) {
+                            aplicaBonificacion = true
+                        }
+                    }
+                }
+            }
+
+            // 3. Si cumple la regla, agregar el regalo
+            if (aplicaBonificacion) {
+                val qtyRegalo = regla.cantidad_bonificacion
+
+                // Usamos la info del producto bonificado que viene en el JSON de la regla
+                regla.producto_bonificacion?.let { prodInfo ->
+                    // Creamos el ProductModel manual para el regalo
+                    val productoRegalo = ProductModel(
+                        idProducto = prodInfo.idProducto,
+                        nombre = "${prodInfo.nombre} (REGALO)",
+                        descripcion = "Bonificación: ${regla.nombre}",
+                        presentacion = "Unidad", // <--- Obligatorio según tu modelo
+                        precioUnitario = 0.0,
+                        precioMayorista = 0.0,
+                        stock = 9999,
+                        imagen = "" // <--- Tu propiedad se llama 'imagen', no 'urlImage'
+                    )
+
+                    // Agregamos al carrito con el flag activado
+                    productos.add(
+                        CartItem(
+                            producto = productoRegalo,
+                            cantidad = qtyRegalo,
+                            esBonificacion = true
+                        )
+                    )
+                }
+            }
         }
     }
 
     fun enviarPedidoFinal(onSuccess: () -> Unit) {
-        // Validación básica
         val cliente = clienteSeleccionado
         if (cliente == null) {
             _uiState.value = UiState.Error("Seleccione un cliente primero")
@@ -103,7 +245,7 @@ class RealizarPedidoViewModel(application: Application) : AndroidViewModel(appli
         viewModelScope.launch {
             _uiState.value = UiState.Loading
             try {
-                // 1. Filtrar productos con cantidad > 0
+                // 1. Filtrar productos con cantidad > 0 (Incluye bonificaciones)
                 val itemsSeleccionados = productos.filter { it.cantidad > 0 }
 
                 if (itemsSeleccionados.isEmpty()) {
@@ -111,61 +253,54 @@ class RealizarPedidoViewModel(application: Application) : AndroidViewModel(appli
                     return@launch
                 }
 
-                // --- GENERACIÓN AUTOMÁTICA DE DATOS FALTANTES ---
-
-                // A. ID Vendedor: Como no tenemos login, ponemos 1 por defecto (o el ID de tu usuario admin)
-                val idVendedorDefault = 1
-
-                // B. Número de Pedido: Generamos uno único usando la hora actual
+                // --- DATOS AUTOMÁTICOS ---
+                val idVendedorDefault = 1 // TODO: Reemplazar con ID de sesión real
                 val timeStamp = System.currentTimeMillis()
                 val numeroPedidoAuto = "PED-${timeStamp}"
 
-                // C. Fecha de Entrega: Calculamos "Mañana" automáticamente
-                val calendar = java.util.Calendar.getInstance()
-                calendar.add(java.util.Calendar.DAY_OF_YEAR, 1) // Sumamos 1 día
-                val formatoFecha = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
-                val fechaEntregaAuto = formatoFecha.format(calendar.time)
-
-                // ------------------------------------------------
-
-                // 2. Preparar la lista de "detalles" (PHP exige 'precio_unitario')
+                // 2. Mapear detalles para el Backend
                 val detallesMapeados = itemsSeleccionados.map { item ->
-                    // Determinamos el precio correcto
-                    val precioFinal = if (cliente.tipoCliente.equals("Mayorista", ignoreCase = true))
-                        item.producto.precioMayorista
-                    else
-                        item.producto.precioUnitario
+                    val precioFinal = if (item.esBonificacion) {
+                        0.0 // Las bonificaciones van con precio 0
+                    } else {
+                        if (cliente.tipoCliente.equals("Mayorista", ignoreCase = true))
+                            item.producto.precioMayorista
+                        else
+                            item.producto.precioUnitario
+                    }
 
                     mapOf(
                         "idProducto" to item.producto.idProducto,
                         "cantidad" to item.cantidad,
-                        "precio_unitario" to precioFinal // <--- ¡OBLIGATORIO PARA PHP!
+                        "precio_unitario" to precioFinal
                     )
                 }
 
-                // 3. Armar el JSON Final (Coincidiendo con lo que pide Laravel)
+                // 3. Construir JSON
                 val pedidoData = mapOf(
                     "idCliente" to cliente.idCliente,
-                    "idVendedor" to idVendedorDefault,      // Dato automático
-                    "numero_pedido" to numeroPedidoAuto,    // Dato automático
-                    "fecha_entrega" to fechaEntregaAuto,    // Dato automático
-                    "observaciones" to "Pedido generado desde App Android",
-                    "detalles" to detallesMapeados          // <--- Se llama "detalles", no "productos"
+                    "idVendedor" to idVendedorDefault,
+                    "numero_pedido" to numeroPedidoAuto,
+                    "fecha_entrega" to fechaEntregaSeleccionada, // Usamos la fecha del DatePicker
+                    "observaciones" to "Pedido desde App Android",
+                    "detalles" to detallesMapeados
                 )
 
-                // Log para depurar (mira esto en el Logcat si falla)
                 val jsonString = Gson().toJson(pedidoData)
                 android.util.Log.d("PEDIDO_JSON", "Enviando: $jsonString")
 
-                // 4. Enviar
                 val body = jsonString.toRequestBody("application/json".toMediaTypeOrNull())
                 val response = RetrofitClient.apiService.enviarPedido(body)
 
                 if (response.isSuccessful) {
                     _uiState.value = UiState.Success("¡Pedido $numeroPedidoAuto creado!")
                     onSuccess()
-                    // Opcional: Limpiar carrito
-                    productos.forEach { it.cantidad = 0 }
+                    // Limpiar carrito visualmente
+                    productos.forEach {
+                        if (!it.esBonificacion) it.cantidad = 0
+                    }
+                    // Eliminar bonificaciones restantes
+                    productos.removeIf { it.esBonificacion }
                 } else {
                     val errorMsg = response.errorBody()?.string() ?: "Error desconocido"
                     android.util.Log.e("PEDIDO_ERROR", errorMsg)

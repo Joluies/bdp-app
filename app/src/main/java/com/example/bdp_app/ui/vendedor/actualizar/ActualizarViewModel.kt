@@ -42,6 +42,7 @@ class ActualizarClienteViewModel(application: Application) : AndroidViewModel(ap
     var apellidos by mutableStateOf("")
     var dni by mutableStateOf("")
     var direccion by mutableStateOf("")
+    var distritos by mutableStateOf("")
     var tieneRuc by mutableStateOf(false)
     var ruc by mutableStateOf("")
     var razonSocial by mutableStateOf("")
@@ -72,57 +73,71 @@ class ActualizarClienteViewModel(application: Application) : AndroidViewModel(ap
     fun prepararNuevaFoto() { indiceFotoEdicion = -1 }
 
     // --- BUSCAR CLIENTE ---
+    // --- BUSCAR CLIENTE (MEJORADO) ---
+// --- BUSCAR CLIENTE (CORREGIDO) ---
+    // --- BUSCAR CLIENTE (VERSIÓN ESTRICTA) ---
+    // --- BUSCAR CLIENTE (VERSIÓN DINÁMICA) ---
     fun buscarCliente(tipoBusqueda: String, criterio: String) {
         viewModelScope.launch {
             _uiState.value = UiState.Loading
             try {
-                // Llamamos al backend enviando el DNI, RUC o Nombre en el campo "search"
-                val response = RetrofitClient.apiService.buscarClientes(criterio)
+                android.util.Log.d("BUSQUEDA", "Buscando: $criterio")
+
+                // CAMBIO CLAVE: Ignoramos el tipoBusqueda por ahora.
+                // Forzamos el uso de "search" porque es lo más estándar en Laravel/PHP.
+                // Esto hará que la URL sea: .../api/customers?search=71415542
+                val filtros = mapOf("search" to criterio)
+
+                // 2. LLAMADA A LA API
+                val response = RetrofitClient.apiService.buscarClientes(filtros)
 
                 if (response.isSuccessful) {
-                    // El backend devuelve una estructura paginada.
-                    // Accedemos a data -> data (la lista real)
                     val listaResultados = response.body()?.data?.data ?: emptyList()
 
-                    // Tomamos el primero que encuentre (o null si la lista está vacía)
-                    val encontrado = listaResultados.firstOrNull()
+                    // ... (El resto del código de selección sigue igual) ...
+                    val encontrado = listaResultados.find {
+                        (it.dni == criterio) ||
+                                (it.ruc == criterio) ||
+                                it.nombre.contains(criterio, true) ||
+                                it.apellidos.contains(criterio, true)
+                    } ?: listaResultados.firstOrNull()
 
                     if (encontrado != null) {
                         limpiarFormulario()
+
+                        // Llenado de datos (Igual que antes)
                         clienteId = encontrado.idCliente.toString()
                         nombre = encontrado.nombre
                         apellidos = encontrado.apellidos
                         dni = encontrado.dni ?: ""
                         direccion = encontrado.direccion
+                        distritos = encontrado.distritos ?: ""
                         tieneRuc = !encontrado.ruc.isNullOrBlank()
                         ruc = encontrado.ruc ?: ""
                         razonSocial = encontrado.razonSocial ?: ""
                         esMayorista = encontrado.tipoCliente.equals("Mayorista", true)
                         esMinorista = !esMayorista
 
-                        // Coordenadas
                         encontrado.coordenadas?.let {
                             latitud = it.latitud
                             longitud = it.longitud
                         }
 
-                        // Teléfonos
                         listaTelefonos.clear()
                         encontrado.telefonos?.forEach {
                             listaTelefonos.add(TelefonoData(it.numero, it.description))
                         }
                         if (listaTelefonos.isEmpty()) listaTelefonos.add(TelefonoData("", "Personal"))
 
-                        // Fotos
                         cargarFotosFachada(encontrado.idCliente)
                         fotoPerfilUrl = encontrado.fotoCliente
 
                         _uiState.value = UiState.Idle
                     } else {
-                        _uiState.value = UiState.Error("No se encontró el cliente en la base de datos.")
+                        _uiState.value = UiState.Error("No se encontró: $criterio")
                     }
                 } else {
-                    _uiState.value = UiState.Error("Error del servidor: ${response.code()}")
+                    _uiState.value = UiState.Error("Error servidor: ${response.code()}")
                 }
             } catch (e: Exception) {
                 _uiState.value = UiState.Error("Conexión: ${e.message}")
@@ -163,6 +178,9 @@ class ActualizarClienteViewModel(application: Application) : AndroidViewModel(ap
         _uiState.value = UiState.Loading
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                android.util.Log.d("UPDATE_DEBUG", "Enviando ID: $id")
+                android.util.Log.d("UPDATE_DEBUG", "Valor Distrito: '$distritos'")
+                // --------------------------------
                 // --- PREPARAR DATOS (Lógica de Nulos) ---
                 // CORRECCIÓN: Si el texto está vacío, enviamos NULL para que Laravel ignore la validación
                 val methodPart = createPartFromString("PUT")
@@ -171,7 +189,7 @@ class ActualizarClienteViewModel(application: Application) : AndroidViewModel(ap
                 val apellidosPart = if (apellidos.isNotBlank()) createPartFromString(apellidos) else null
                 val dniPart = if (dni.isNotBlank()) createPartFromString(dni) else null
                 val direccionPart = if (direccion.isNotBlank()) createPartFromString(direccion) else null
-
+                val distritoPart = if (distritos.isNotBlank()) createPartFromString(distritos) else null
                 val tipoStr = if (esMayorista) "Mayorista" else "Minorista"
                 val tipoPart = createPartFromString(tipoStr)
 
@@ -211,6 +229,7 @@ class ActualizarClienteViewModel(application: Application) : AndroidViewModel(ap
                     apellidos = apellidosPart,
                     dni = dniPart,         // <--- Ahora viaja como null si está vacío
                     direccion = direccionPart,
+                    distritos = distritoPart,
                     tipoCliente = tipoPart,
                     ruc = rucPart,         // <--- Ahora viaja como null si está vacío
                     razonSocial = razonSocialPart,
@@ -305,6 +324,7 @@ class ActualizarClienteViewModel(application: Application) : AndroidViewModel(ap
 
     fun limpiarFormulario() {
         clienteId = null; nombre = ""; apellidos = ""; dni = ""; direccion = ""
+        distritos = ""
         tieneRuc = false; ruc = ""; razonSocial = ""
         esMayorista = false; esMinorista = false
         latitud = null; longitud = null

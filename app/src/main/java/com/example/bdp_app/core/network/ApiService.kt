@@ -1,5 +1,6 @@
 package com.example.bdp_app.core.network
 
+import com.example.bdp_app.domain.model.BonificacionResponse
 import com.example.bdp_app.domain.model.CustomerResponse
 import com.example.bdp_app.domain.model.FotosFachadaApiResponse
 import com.example.bdp_app.domain.model.SingleCustomerResponse
@@ -20,8 +21,10 @@ interface ApiService {
 
     // 2. BUSCAR EN EL SERVIDOR (Usando el nuevo filtro 'search')
     // Esto llamará a: /api/customers?search=70854216 (por ejemplo)
+    // CORRECTO: Usa @Query("search") para enviar ?search=Joel
+// USAMOS @QueryMap para poder enviar "dni", "ruc", "nombre", etc. dinámicamente
     @GET("customers")
-    suspend fun buscarClientes(@Query("search") criterio: String): Response<CustomerResponse>
+    suspend fun buscarClientes(@QueryMap filtros: Map<String, String>): Response<CustomerResponse>
 
 
 
@@ -52,6 +55,7 @@ interface ApiService {
         @Part("apellidos") apellidos: RequestBody?,
         @Part("dni") dni: RequestBody?,
         @Part("direccion") direccion: RequestBody?,
+        @Part("distritos") distritos: RequestBody?,
         @Part("tipoCliente") tipoCliente: RequestBody?,
         @Part("ruc") ruc: RequestBody?,
         @Part("razonSocial") razonSocial: RequestBody?,
@@ -85,4 +89,7 @@ interface ApiService {
 
     @POST("pedidos") // O la ruta correcta de tu backend para pedidos
     suspend fun enviarPedido(@Body pedido: RequestBody): Response<ResponseBody>
+
+    @GET("bonificaciones")
+    suspend fun getBonificaciones(): Response<BonificacionResponse>
 }

@@ -29,6 +29,7 @@ data class Cliente(
     val apellidos: String,
     val dni: String,
     val direccion: String,
+    val distritos: String?,
     val tipoCliente: String,
     val ruc: String?,
 

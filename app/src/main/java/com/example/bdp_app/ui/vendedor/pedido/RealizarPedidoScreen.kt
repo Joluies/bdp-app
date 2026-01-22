@@ -1,5 +1,6 @@
 package com.example.bdp_app.ui.vendedor.pedido
 
+import android.app.DatePickerDialog
 import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -8,6 +9,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
@@ -25,6 +27,7 @@ import androidx.navigation.NavHostController
 import com.example.bdp_app.ui.components.ProductoItemRow
 import com.example.bdp_app.ui.theme.BdpTheme
 import com.example.bdp_app.ui.vendedor.agregar.UiState
+import java.util.Calendar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,11 +37,19 @@ fun RealizarPedidoScreen(
 ) {
     val context = LocalContext.current
     var showConfirmDialog by remember { mutableStateOf(false) }
-
-    // Estado del envío
     val uiState by viewModel.uiState.collectAsState()
 
-    // Manejo de respuestas
+    // Calendario
+    val calendar = Calendar.getInstance()
+    val datePickerDialog = DatePickerDialog(
+        context,
+        { _, year, month, dayOfMonth -> viewModel.actualizarFechaEntrega(year, month, dayOfMonth) },
+        calendar.get(Calendar.YEAR),
+        calendar.get(Calendar.MONTH),
+        calendar.get(Calendar.DAY_OF_MONTH)
+    )
+    datePickerDialog.datePicker.minDate = calendar.timeInMillis
+
     LaunchedEffect(uiState) {
         when (uiState) {
             is UiState.Success -> {
@@ -62,23 +73,11 @@ fun RealizarPedidoScreen(
             )
         },
         bottomBar = {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shadowElevation = 8.dp,
-                color = Color.White
-            ) {
+            Surface(modifier = Modifier.fillMaxWidth(), shadowElevation = 8.dp, color = Color.White) {
                 Column(Modifier.padding(16.dp)) {
                     Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
-                        Text("Total",
-                            fontWeight = FontWeight.Bold,
-                            color = BdpTheme.colors.DarkGreenBDP,
-                            fontSize = 20.sp)
-                        Text(
-                            "S/ ${"%.2f".format(viewModel.total)}",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp,
-                            color = BdpTheme.colors.DarkGreenBDP
-                        )
+                        Text("Total", fontWeight = FontWeight.Bold, color = BdpTheme.colors.DarkGreenBDP, fontSize = 20.sp)
+                        Text("S/ ${"%.2f".format(viewModel.total)}", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = BdpTheme.colors.DarkGreenBDP)
                     }
                     Spacer(Modifier.height(12.dp))
                     Button(
@@ -88,71 +87,161 @@ fun RealizarPedidoScreen(
                         shape = RoundedCornerShape(12.dp),
                         enabled = viewModel.total > 0 && viewModel.clienteSeleccionado != null && uiState !is UiState.Loading
                     ) {
-                        if (uiState is UiState.Loading) {
-                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
-                        } else {
-                            Text("Haz un pedido", color = Color.White, fontSize = 18.sp)
-                        }
+                        if (uiState is UiState.Loading) CircularProgressIndicator(color = Color.White) else Text("Haz un pedido", fontSize = 18.sp)
                     }
                 }
             }
         }
     ) { padding ->
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp)
+            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)
         ) {
             item {
                 Spacer(Modifier.height(16.dp))
                 Text("DATOS DEL CLIENTE", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.Gray)
-
-                // COMPONENTE MEJORADO DE SELECCIÓN
                 SeccionSeleccionClienteMejorada(viewModel)
-
                 Spacer(Modifier.height(16.dp))
+
+                Text("FECHA DE ENTREGA", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.Gray)
+                OutlinedCard(
+                    onClick = { datePickerDialog.show() },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = CardDefaults.outlinedCardColors(containerColor = Color.White)
+                ) {
+                    Row(Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.DateRange, null, tint = Color(0xFF1B5E20))
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text("Fecha programada", fontSize = 12.sp, color = Color.Gray)
+                            Text(viewModel.fechaEntregaSeleccionada, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        }
+                        Spacer(Modifier.weight(1f))
+                        Text("Cambiar", color = Color(0xFF1B5E20), fontWeight = FontWeight.Bold)
+                    }
+                }
+                Spacer(Modifier.height(24.dp))
                 Text("SELECCIONE PRODUCTO", fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
-                Text("(Toque un producto para ver detalles)", fontSize = 10.sp, color = Color.Gray, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+                Text("(Toque la imagen para ver detalles)", fontSize = 10.sp, color = Color.Gray, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
                 Spacer(Modifier.height(8.dp))
             }
 
             // LISTA DE PRODUCTOS
             items(viewModel.productos) { item ->
-                ProductoItemRow(
-                    item = item,
-                    tipoCliente = viewModel.clienteSeleccionado?.tipoCliente ?: "Minorista",
-                    onQtyChange = { viewModel.actualizarCantidad(item.producto.idProducto, it) }
-                )
+                if (item.esBonificacion) {
+                    // --- DISEÑO CARTA VERDE (REGALOS) ---
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF4CAF50))
+                    ) {
+                        Row(Modifier.padding(12.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("🎁", fontSize = 24.sp)
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(item.producto.nombre, fontWeight = FontWeight.Bold, color = Color(0xFF1B5E20))
+                                Text(item.producto.descripcion, fontSize = 12.sp, color = Color(0xFF388E3C))
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("${item.cantidad} UND", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                Text("GRATIS", fontWeight = FontWeight.Bold, color = Color(0xFF388E3C), fontSize = 12.sp)
+                            }
+                        }
+                    }
+                } else {
+                    // --- DISEÑO NORMAL (CON IMAGEN) ---
+                    ProductoItemRow(
+                        item = item,
+                        tipoCliente = viewModel.clienteSeleccionado?.tipoCliente ?: "Minorista",
+                        onQtyChange = { nuevaCantidad ->
+                            viewModel.actualizarCantidad(item.producto.idProducto, nuevaCantidad)
+                        }
+                    )
+                }
             }
-
             item { Spacer(Modifier.height(100.dp)) }
         }
     }
 
-    // DIÁLOGO DE CONFIRMACIÓN (Sin cambios mayores)
+    // DIÁLOGO DE CONFIRMACIÓN MEJORADO
     if (showConfirmDialog) {
         AlertDialog(
             onDismissRequest = { if (uiState !is UiState.Loading) showConfirmDialog = false },
             containerColor = Color.White,
-            title = { Text("Confirmar Pedido", fontWeight = FontWeight.Bold) },
-            text = {
+            title = {
                 Column {
-                    Text("Cliente: ${viewModel.clienteSeleccionado?.nombre} ${viewModel.clienteSeleccionado?.apellidos}")
-                    Text("Tipo: ${viewModel.clienteSeleccionado?.tipoCliente}")
+                    Text("Resumen del Pedido", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                    Text(viewModel.clienteSeleccionado?.nombre ?: "", fontSize = 14.sp, color = Color.Gray)
+                }
+            },
+            text = {
+                Column(Modifier.fillMaxWidth()) {
+                    val itemsEnCarrito = viewModel.productos.filter { it.cantidad > 0 }
+                    Divider()
+                    LazyColumn(Modifier.weight(1f, fill = false).heightIn(max = 300.dp)) {
+                        items(itemsEnCarrito) { item ->
+                            Row(
+                                Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                // COLUMNA IZQUIERDA
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = item.producto.nombre,
+                                        fontWeight = if (item.esBonificacion) FontWeight.Bold else FontWeight.Normal,
+                                        fontSize = 13.sp,
+                                        color = if (item.esBonificacion) Color(0xFF2E7D32) else Color.Black
+                                    )
+
+                                    if (item.esBonificacion) {
+                                        Text(item.producto.descripcion, fontSize = 10.sp, color = Color(0xFF2E7D32), fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                                    } else {
+                                        // --- NUEVA LÓGICA DE TEXTO (PAQTES vs PAQTE) ---
+                                        val esPaquete = item.producto.presentacion.contains("x", true) || item.producto.presentacion.contains("paq", true)
+
+                                        val unidadTexto = if (esPaquete) {
+                                            if (item.cantidad > 1) "paqtes" else "paqte"
+                                        } else {
+                                            if (item.cantidad > 1) "unds" else "und"
+                                        }
+
+                                        Text("${item.cantidad} x $unidadTexto ${item.producto.presentacion}", fontSize = 12.sp, color = Color.Gray)
+                                    }
+                                }
+
+                                // COLUMNA DERECHA (PRECIO CON REGLA 100)
+                                val precioAplicado = if (!item.esBonificacion &&
+                                    viewModel.clienteSeleccionado?.tipoCliente == "Mayorista" &&
+                                    item.cantidad >= 100) // <--- REGLA 100 APLICADA
+                                    item.producto.precioMayorista
+                                else
+                                    item.producto.precioUnitario
+
+                                Text(
+                                    text = if (item.esBonificacion) "GRATIS" else "S/ ${"%.2f".format(precioAplicado * item.cantidad)}",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = if (item.esBonificacion) Color(0xFF2E7D32) else Color.Black
+                                )
+                            }
+                            Divider(color = Color.LightGray.copy(alpha = 0.3f))
+                        }
+                    }
                     Divider(Modifier.padding(vertical = 8.dp))
                     Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
-                        Text("Subtotal:")
-                        Text("S/ ${"%.2f".format(viewModel.subtotal)}")
+                        Text("Subtotal:", fontSize = 14.sp)
+                        Text("S/ ${"%.2f".format(viewModel.subtotal)}", fontSize = 14.sp)
                     }
-                    Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
-                        Text("Impuestos (IGV):")
-                        Text("S/ ${"%.2f".format(viewModel.impuestos)}")
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.DateRange, null, modifier = Modifier.size(16.dp), tint = Color(0xFF1B5E20))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Entrega: ${viewModel.fechaEntregaSeleccionada}", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF1B5E20))
                     }
                     Spacer(Modifier.height(8.dp))
                     Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
-                        Text("Total:", fontWeight = FontWeight.Bold)
-                        Text("S/ ${"%.2f".format(viewModel.total)}", fontWeight = FontWeight.Bold, color = Color(0xFF1B5E20))
+                        Text("TOTAL:", fontWeight = FontWeight.Black, fontSize = 18.sp)
+                        Text("S/ ${"%.2f".format(viewModel.total)}", fontWeight = FontWeight.Black, fontSize = 18.sp, color = Color(0xFF1B5E20))
                     }
                 }
             },
@@ -161,18 +250,15 @@ fun RealizarPedidoScreen(
                     onClick = { viewModel.enviarPedidoFinal { showConfirmDialog = false } },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7CB342)),
                     enabled = uiState !is UiState.Loading
-                ) { Text("CONFIRMAR") }
+                ) { Text("ENVIAR PEDIDO") }
             },
             dismissButton = {
-                TextButton(onClick = { showConfirmDialog = false }, enabled = uiState !is UiState.Loading) {
-                    Text("CANCELAR", color = Color.Gray)
-                }
+                OutlinedButton(onClick = { showConfirmDialog = false }, enabled = uiState !is UiState.Loading) { Text("Volver") }
             }
         )
     }
 }
 
-// --- NUEVO COMPONENTE DE SELECCIÓN DE CLIENTE ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SeccionSeleccionClienteMejorada(viewModel: RealizarPedidoViewModel) {
@@ -180,7 +266,6 @@ fun SeccionSeleccionClienteMejorada(viewModel: RealizarPedidoViewModel) {
     var searchText by remember { mutableStateOf("") }
 
     Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
-        // Tarjeta que abre el BottomSheet
         OutlinedCard(
             onClick = { showBottomSheet = true },
             modifier = Modifier.fillMaxWidth(),
@@ -213,21 +298,13 @@ fun SeccionSeleccionClienteMejorada(viewModel: RealizarPedidoViewModel) {
         }
     }
 
-    // ModalBottomSheet: La mejor opción para listas largas
     if (showBottomSheet) {
         ModalBottomSheet(
             onDismissRequest = { showBottomSheet = false },
             containerColor = Color.White
         ) {
             Column(Modifier.padding(16.dp)) {
-                Text(
-                    "Seleccionar Cliente",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
-
-                // Buscador dentro del BottomSheet
+                Text("Seleccionar Cliente", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(bottom = 12.dp))
                 OutlinedTextField(
                     value = searchText,
                     onValueChange = { searchText = it },
@@ -236,49 +313,26 @@ fun SeccionSeleccionClienteMejorada(viewModel: RealizarPedidoViewModel) {
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
                 )
-
                 Spacer(Modifier.height(12.dp))
-
-                // Lista filtrada
                 val clientesFiltrados = viewModel.listaClientes.filter {
-                    it.nombre.contains(searchText, ignoreCase = true) ||
-                            it.apellidos.contains(searchText, ignoreCase = true)
+                    it.nombre.contains(searchText, ignoreCase = true) || it.apellidos.contains(searchText, ignoreCase = true)
                 }
-
-                LazyColumn(
-                    modifier = Modifier.fillMaxHeight(0.6f) // Ocupa hasta el 60% de la pantalla
-                ) {
+                LazyColumn(modifier = Modifier.fillMaxHeight(0.6f)) {
                     items(clientesFiltrados) { cliente ->
                         ListItem(
                             headlineContent = { Text("${cliente.nombre} ${cliente.apellidos}", fontWeight = FontWeight.Bold) },
                             supportingContent = { Text(cliente.tipoCliente, color = Color.Gray) },
-                            leadingContent = {
-                                Icon(
-                                    Icons.Default.Person,
-                                    null,
-                                    tint = if (cliente.idCliente == viewModel.clienteSeleccionado?.idCliente) Color(0xFF1B5E20) else Color.Gray
-                                )
-                            },
-                            modifier = Modifier
-                                .clickable {
-                                    viewModel.clienteSeleccionado = cliente
-                                    showBottomSheet = false // Cierra al seleccionar
-                                    searchText = "" // Limpia búsqueda
-                                }
-                                .padding(vertical = 4.dp)
+                            leadingContent = { Icon(Icons.Default.Person, null, tint = if (cliente.idCliente == viewModel.clienteSeleccionado?.idCliente) Color(0xFF1B5E20) else Color.Gray) },
+                            modifier = Modifier.clickable {
+                                viewModel.clienteSeleccionado = cliente
+                                showBottomSheet = false
+                                searchText = ""
+                            }.padding(vertical = 4.dp)
                         )
                         Divider(color = Color.LightGray.copy(alpha = 0.3f))
                     }
-
                     if (clientesFiltrados.isEmpty()) {
-                        item {
-                            Text(
-                                "No se encontraron clientes",
-                                modifier = Modifier.fillMaxWidth().padding(20.dp),
-                                textAlign = TextAlign.Center,
-                                color = Color.Gray
-                            )
-                        }
+                        item { Text("No se encontraron clientes", modifier = Modifier.fillMaxWidth().padding(20.dp), textAlign = TextAlign.Center, color = Color.Gray) }
                     }
                 }
             }

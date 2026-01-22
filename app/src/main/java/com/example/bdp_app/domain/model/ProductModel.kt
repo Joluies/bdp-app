@@ -21,5 +21,6 @@ data class ProductModel(
 
 data class CartItem(
     val producto: ProductModel,
-    var cantidad: Int = 0
+    var cantidad: Int = 0,
+    var esBonificacion: Boolean = false // <--- ¡ESTO FALTABA!
 )

@@ -277,7 +277,14 @@ fun ActualizarClienteScreen(
                 OutlinedTextField(value = viewModel.apellidos, onValueChange = { viewModel.apellidos = it }, label = { Text("Apellidos") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
                 OutlinedTextField(value = viewModel.dni, onValueChange = { viewModel.dni = it }, label = { Text("DNI") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                 OutlinedTextField(value = viewModel.direccion, onValueChange = { viewModel.direccion = it }, label = { Text("Dirección") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
-
+                OutlinedTextField(
+                    value = viewModel.distritos,
+                    onValueChange = { viewModel.distritos = it },
+                    label = { Text("Distritos") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                )
                 Spacer(Modifier.height(16.dp))
                 Text("Tipo de Cliente", fontWeight = FontWeight.Bold, color = BdpTheme.colors.DarkGreenBDP)
                 Row(verticalAlignment = Alignment.CenterVertically) {

@@ -31,21 +31,37 @@ fun ProductoItemRow(
     tipoCliente: String,
     onQtyChange: (Int) -> Unit
 ) {
-    // Estado para saber si la imagen está expandida
+    // Estado para expandir/contraer imagen
     var isExpanded by remember { mutableStateOf(false) }
 
-    // Calcular precio según cliente
-    val precioFinal = if (tipoCliente.equals("Mayorista", ignoreCase = true)) {
+    // 1. LÓGICA DE PRECIO VISUAL (Regla >= 100)
+    // Solo mostramos precio mayorista si el cliente es Mayorista Y lleva >= 100
+    val precioMostrar = if (tipoCliente.equals("Mayorista", true) && item.cantidad >= 100) {
         item.producto.precioMayorista
     } else {
         item.producto.precioUnitario
+    }
+
+    // 2. LÓGICA DE TEXTO (Pluralización inteligente)
+    // Si la presentación tiene una "x" (ej: "12x500ml") asumimos que es paquete
+    val esUnidad = item.producto.presentacion.contains("und", ignoreCase = true) ||
+            item.producto.presentacion.contains("unidad", ignoreCase = true) ||
+            item.producto.presentacion.contains("pz", ignoreCase = true)
+
+    val unidadTexto = if (esUnidad) {
+        // Caso: Es unidad explícita
+        if (item.cantidad > 1) "unds" else "und"
+    } else {
+        // Caso: Es paquete (o cualquier otra cosa como "625ml")
+        // Aquí entrará "0" y devolverá "paqte" correctamente
+        if (item.cantidad > 1) "paqtes" else "paqte"
     }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp)
-            .animateContentSize( // Animación suave al cambiar tamaño
+            .animateContentSize(
                 animationSpec = spring(
                     dampingRatio = Spring.DampingRatioMediumBouncy,
                     stiffness = Spring.StiffnessLow
@@ -58,106 +74,94 @@ fun ProductoItemRow(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { isExpanded = !isExpanded } // Al tocar la tarjeta, se expande/contrae
+                .clickable { isExpanded = !isExpanded }
         ) {
             // --- PARTE SUPERIOR (IMAGEN) ---
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(if (isExpanded) 480.dp else 160.dp)
+                    .height(if (isExpanded) 450.dp else 140.dp) // Altura ajustada
                     .padding(8.dp),
                 contentAlignment = Alignment.Center
             ) {
-// 1. CORRECCIÓN INTELIGENTE DE URL
-                // Si la URL viene de la BD sin "/productos", se lo agregamos a la fuerza.
-                val urlBase = item.producto.imagen
-                val urlFinal = if (urlBase.contains("/productos/")) {
-                    urlBase // Ya está bien
-                } else {
-                    // Reemplazamos ".../img/" por ".../img/productos/"
-                    urlBase.replace("/storage/img/", "/storage/img/productos/")
-                }
-
-                // LOG PARA VERIFICAR (Debe salir igual que en tu navegador)
-                android.util.Log.d("URL_CORREGIDA", "Cargando: $urlFinal")
+                // Corrección de URL si es necesario
+                val urlImg = item.producto.imagen
+                val urlFinal = if (urlImg.contains("http")) urlImg else "https://api.bebidasdelperuapp.com$urlImg"
 
                 AsyncImage(
                     model = ImageRequest.Builder(LocalContext.current)
-                        .data(urlFinal) // <--- Usamos la URL corregida
+                        .data(urlFinal)
                         .crossfade(true)
                         .error(android.R.drawable.ic_menu_report_image)
                         .placeholder(android.R.drawable.ic_menu_gallery)
                         .build(),
                     contentDescription = item.producto.nombre,
-                    contentScale = if (isExpanded) ContentScale.Fit else ContentScale.Fit,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(RoundedCornerShape(8.dp))
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize()
                 )
             }
 
-            // --- PARTE INFERIOR (DATOS Y CONTROLES) ---
+            // --- PARTE INFERIOR (DATOS) ---
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Textos
+                // Info
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Marca",
-                        fontSize = 12.sp,
-                        color = Color.Gray
-                    )
                     Text(
                         text = item.producto.nombre,
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
                         color = BdpTheme.colors.DarkGreenBDP
                     )
+                    // TEXTO FORMATEADO: Ej "10 x paqtes PRESENTACION"
                     Text(
-                        text = item.producto.descripcion,
-                        fontSize = 12.sp,
+                        text = "${item.cantidad} x $unidadTexto ${item.producto.presentacion}",
+                        fontSize = 13.sp,
                         color = Color.Gray,
-                        maxLines = if (isExpanded) Int.MAX_VALUE else 2 // Muestra todo si está expandido
+                        fontWeight = FontWeight.Medium
                     )
-                    Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "Cantidad: ${item.cantidad}",
-                        fontSize = 14.sp
+                        text = "Pqte: S/ ${"%.2f".format(precioMostrar)}",
+                        fontSize = 12.sp,
+                        color = Color(0xFF388E3C)
                     )
                 }
 
-                // Precio y Botones
+                // Controles
                 Column(horizontalAlignment = Alignment.End) {
+                    // Subtotal de la línea
                     Text(
-                        text = "S/ ${"%.2f".format(precioFinal)}",
+                        text = "S/ ${"%.2f".format(precioMostrar * item.cantidad)}",
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp
                     )
+
                     Spacer(Modifier.height(8.dp))
 
-                    // Controles de Cantidad
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(
                             onClick = { if (item.cantidad > 0) onQtyChange(item.cantidad - 1) },
-                            modifier = Modifier.size(40.dp)
+                            modifier = Modifier.size(36.dp)
                         ) {
-                            Icon(Icons.Default.Remove, null)
+                            // Usamos el icono estándar Remove (-)
+                            Icon(Icons.Default.Remove, contentDescription = "-")
                         }
 
                         Text(
                             text = "${item.cantidad}",
-                            modifier = Modifier.padding(horizontal = 8.dp),
-                            fontWeight = FontWeight.Bold
+                            modifier = Modifier.padding(horizontal = 12.dp),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp
                         )
 
                         IconButton(
                             onClick = { onQtyChange(item.cantidad + 1) },
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.size(36.dp)
                         ) {
-                            Icon(Icons.Default.Add, null)
+                            Icon(Icons.Default.Add, contentDescription = "+")
                         }
                     }
                 }

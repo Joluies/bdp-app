@@ -62,10 +62,10 @@ fun HomeScreen(navController: NavHostController, role: String) {
         Image(
             painter = painterResource(id = R.drawable.logo_bdp),
             contentDescription = "Logo BDP",
-            modifier = Modifier.size(380.dp).padding(top = 20.dp)
+            modifier = Modifier.size(380.dp).padding(top = 16.dp)
         )
 
-        Spacer(modifier = Modifier.height(40.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         // Rejilla de opciones (2 columnas)
         LazyVerticalGrid(
