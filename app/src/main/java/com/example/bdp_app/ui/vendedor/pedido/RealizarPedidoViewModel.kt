@@ -245,62 +245,95 @@ class RealizarPedidoViewModel(application: Application) : AndroidViewModel(appli
         viewModelScope.launch {
             _uiState.value = UiState.Loading
             try {
-                // 1. Filtrar productos con cantidad > 0 (Incluye bonificaciones)
-                val itemsSeleccionados = productos.filter { it.cantidad > 0 }
+                // 1. CLASIFICAR ÍTEMS DEL CARRITO
+                // Ventas: Productos normales con cantidad > 0
+                val itemsVenta = productos.filter { !it.esBonificacion && it.cantidad > 0 }
 
-                if (itemsSeleccionados.isEmpty()) {
-                    _uiState.value = UiState.Error("Debe agregar al menos un producto")
+                // Bonificaciones: Productos marcados como bonificación
+                val itemsBonificacion = productos.filter { it.esBonificacion && it.cantidad > 0 }
+
+                if (itemsVenta.isEmpty()) {
+                    _uiState.value = UiState.Error("El pedido debe tener al menos un producto de venta.")
                     return@launch
                 }
 
-                // --- DATOS AUTOMÁTICOS ---
-                val idVendedorDefault = 1 // TODO: Reemplazar con ID de sesión real
+                // --- DATOS DE CABECERA ---
+                // RECUERDA: Usar el ID real del usuario logueado. Si es fijo pon el que sirva (ej: 1 o 4)
+                val idVendedorActual = 4
                 val timeStamp = System.currentTimeMillis()
                 val numeroPedidoAuto = "PED-${timeStamp}"
 
-                // 2. Mapear detalles para el Backend
-                val detallesMapeados = itemsSeleccionados.map { item ->
-                    val precioFinal = if (item.esBonificacion) {
-                        0.0 // Las bonificaciones van con precio 0
-                    } else {
-                        if (cliente.tipoCliente.equals("Mayorista", ignoreCase = true))
-                            item.producto.precioMayorista
-                        else
-                            item.producto.precioUnitario
+                // 2. CONSTRUIR ESTRUCTURA ANIDADA (Detalles -> Bonificaciones)
+                val detallesEstructurados = itemsVenta.map { venta ->
+
+                    // A. Calculamos precio
+                    val precioAplicado = if (cliente.tipoCliente.equals("Mayorista", ignoreCase = true) && venta.cantidad >= 100)
+                        venta.producto.precioMayorista
+                    else
+                        venta.producto.precioUnitario
+
+                    // B. Buscamos si este producto tiene bonificaciones asociadas (Mismo ID)
+                    // Ej: Si vendo "Inca Kola" (ID 1), busco si hay "Inca Kola (Regalo)" (ID 1) en el carrito.
+                    val bonosDelProducto = itemsBonificacion.filter { bono ->
+                        bono.producto.idProducto == venta.producto.idProducto
                     }
 
-                    mapOf(
-                        "idProducto" to item.producto.idProducto,
-                        "cantidad" to item.cantidad,
-                        "precio_unitario" to precioFinal
+                    // C. Mapeamos las bonificaciones internas
+                    val bonificacionesList = bonosDelProducto.map { bono ->
+                        mapOf(
+                            "idProducto" to bono.producto.idProducto,
+                            "cantidad_bonificada" to bono.cantidad,
+
+                            // --- NUEVA LÍNEA OBLIGATORIA ---
+                            // Enviamos la cantidad del "padre" (venta) como cantidad_comprada
+                            "cantidad_comprada" to venta.cantidad,
+                            // -------------------------------
+
+                            "tipo_bonificacion" to "cantidad",
+                            "observaciones" to (bono.producto.descripcion ?: "Promo")
+                        )
+                    }
+
+                    // D. Armamos el objeto del detalle con sus hijos
+                    val detalleMap = mutableMapOf<String, Any>(
+                        "idProducto" to venta.producto.idProducto,
+                        "cantidad" to venta.cantidad,
+                        "precio_unitario" to precioAplicado
                     )
+
+                    // Solo agregamos la lista "bonificaciones" si realmente tiene algo
+                    if (bonificacionesList.isNotEmpty()) {
+                        detalleMap["bonificaciones"] = bonificacionesList
+                    }
+
+                    detalleMap // Return del map
                 }
 
-                // 3. Construir JSON
+                // 3. JSON FINAL
                 val pedidoData = mapOf(
                     "idCliente" to cliente.idCliente,
-                    "idVendedor" to idVendedorDefault,
+                    "idVendedor" to idVendedorActual,
                     "numero_pedido" to numeroPedidoAuto,
-                    "fecha_entrega" to fechaEntregaSeleccionada, // Usamos la fecha del DatePicker
-                    "observaciones" to "Pedido desde App Android",
-                    "detalles" to detallesMapeados
+                    "fecha_entrega" to fechaEntregaSeleccionada,
+                    "detalles" to detallesEstructurados
                 )
 
+                // Log para verificar antes de enviar
                 val jsonString = Gson().toJson(pedidoData)
-                android.util.Log.d("PEDIDO_JSON", "Enviando: $jsonString")
+                android.util.Log.d("PEDIDO_JSON", "Enviando estructura anidada: $jsonString")
 
+                // 4. ENVÍO
                 val body = jsonString.toRequestBody("application/json".toMediaTypeOrNull())
                 val response = RetrofitClient.apiService.enviarPedido(body)
 
                 if (response.isSuccessful) {
-                    _uiState.value = UiState.Success("¡Pedido $numeroPedidoAuto creado!")
+                    _uiState.value = UiState.Success("¡Pedido creado exitosamente!")
                     onSuccess()
-                    // Limpiar carrito visualmente
-                    productos.forEach {
-                        if (!it.esBonificacion) it.cantidad = 0
-                    }
-                    // Eliminar bonificaciones restantes
+
+                    // Limpiar carrito
+                    productos.forEach { if (!it.esBonificacion) it.cantidad = 0 }
                     productos.removeIf { it.esBonificacion }
+
                 } else {
                     val errorMsg = response.errorBody()?.string() ?: "Error desconocido"
                     android.util.Log.e("PEDIDO_ERROR", errorMsg)
@@ -308,7 +341,7 @@ class RealizarPedidoViewModel(application: Application) : AndroidViewModel(appli
                 }
 
             } catch (e: Exception) {
-                _uiState.value = UiState.Error("Error de conexión: ${e.localizedMessage}")
+                _uiState.value = UiState.Error("Error de conexión: ${e.message}")
                 e.printStackTrace()
             }
         }
